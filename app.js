@@ -1,10 +1,3 @@
-/* ============================================================
-   SCHOLARIS LMS v2.0 — ADMIN PANEL JAVASCRIPT
-   Polytechnic University of Cabuyao | app.js
-   ============================================================ */
-
-// ── STORAGE & VALIDATION ─────────────────────────────────────
-
 class StorageManager {
     constructor(key) { this.key = key; }
     load() {
@@ -111,8 +104,6 @@ class Validator {
     }
 }
 
-// ── STUDENT ──────────────────────────────────────────────────
-
 class Student {
     constructor(name, email, id, section = '', courses = []) {
         this.name = name;
@@ -177,8 +168,6 @@ class StudentManager {
     }
 }
 
-// ── TEACHER ──────────────────────────────────────────────────
-
 class Teacher {
     constructor(name, email, id, dept = '') {
         this.name = name;
@@ -217,8 +206,6 @@ class TeacherManager {
     }
 }
 
-// ── SECTION ──────────────────────────────────────────────────
-
 class Section {
     constructor(name, year, teacherId) {
         this.name = name;
@@ -231,6 +218,30 @@ class SectionManager {
     constructor() {
         this.repo = new StorageManager("pnc_sections");
         this.sections = this.repo.load().map(s => new Section(s.name, s.year, s.teacherId));
+        this.seedDefaults();
+    }
+
+    seedDefaults() {
+        const SEED_VERSION = 'v3';
+        const seeded = localStorage.getItem('pnc_sections_seeded');
+        if (seeded === SEED_VERSION) return;
+
+        this.sections = [];
+        const programs = ['IT','CS','IS'];
+        const years    = ['1st Year','2nd Year','3rd Year','4th Year'];
+        const blocks   = ['A','B','C'];
+
+        years.forEach((yr, yi) => {
+            const yNum = yi + 1;
+            programs.forEach(prog => {
+                blocks.forEach(blk => {
+                    this.sections.push(new Section(`${yNum}${prog}-${blk}`, yr, ''));
+                });
+            });
+        });
+
+        this.repo.save(this.sections);
+        localStorage.setItem('pnc_sections_seeded', SEED_VERSION);
     }
     add() {
         const n = $('#secName').val().trim();
@@ -257,23 +268,29 @@ class SectionManager {
             app.logActivity(`Deleted section <strong>${name}</strong>`, 'red');
         }
     }
+    assignTeacher(idx, teacherId) {
+        this.sections[idx].teacherId = teacherId;
+        this.repo.save(this.sections);
+        const t = app.teacherManager.teachers.find(t => t.employeeId === teacherId);
+        app.logActivity(`Assigned <strong>${t ? t.name : 'teacher'}</strong> to <strong>${this.sections[idx].name}</strong>`, 'blue');
+        app.renderSections();
+    }
 }
 
-// ── COURSE ───────────────────────────────────────────────────
-
-class Course { constructor(name, code) { this.name = name; this.code = code; } }
+class Course { constructor(name, code, units = 3) { this.name = name; this.code = code; this.units = units; } }
 
 class CourseManager {
     constructor() {
         this.repo = new StorageManager("pnc_courses");
-        this.courses = this.repo.load().map(c => new Course(c.name, c.code));
+        this.courses = this.repo.load().map(c => new Course(c.name, c.code, c.units || 3));
     }
     add() {
         const n = $('#crsName').val().trim();
         const c = $('#crsCode').val().trim().toUpperCase();
+        const u = parseInt($('#crsUnits').val()) || 3;
         if (!n || !c) return alert("Please fill in both fields.");
         if (this.courses.some(x => x.code === c)) return alert("Subject code already exists.");
-        this.courses.push(new Course(n, c));
+        this.courses.push(new Course(n, c, u));
         this.repo.save(this.courses);
         app.renderAll();
         $('#crsName, #crsCode').val('');
@@ -307,12 +324,10 @@ class CourseManager {
     }
 }
 
-// ── GRADES & ATTENDANCE ──────────────────────────────────────
-
 class GradesManager {
     constructor() {
         this.repo = new StorageManager("pnc_grades");
-        this.records = this.repo.load(); // { studentId, courseCode, prelim, midterm, finals, attendance: [] }
+        this.records = this.repo.load();
     }
 
     getRecord(studentId, courseCode) {
@@ -330,29 +345,24 @@ class GradesManager {
 
         const rec = this.getRecord(stuId, crsCode);
 
-        // Show student info
         $('#gradeStudentInfo').html(`
             <strong>${stu.name}</strong> &nbsp;<span class="badge badge-blue">${stu.studentId}</span>
             &nbsp;|&nbsp; Subject: <strong>${crs.code} — ${crs.name}</strong>
         `);
 
-        // Fill grade inputs
         $('#gradePrelim').val(rec ? rec.prelim : '');
         $('#gradeMidterm').val(rec ? rec.midterm : '');
         $('#gradeFinals').val(rec ? rec.finals : '');
         this.updateComputed();
 
-        // Set today's date as default
         const today = new Date().toISOString().split('T')[0];
         $('#attendDate').val(today);
 
-        // Render attendance
         this.renderAttendance(rec);
 
         $('#gradeRecordArea').show();
         $('#gradeEmptyState').hide();
 
-        // Live grade computation
         $('#gradePrelim, #gradeMidterm, #gradeFinals').off('input').on('input', () => this.updateComputed());
     }
 
@@ -409,7 +419,6 @@ class GradesManager {
             rec = { studentId: stuId, courseCode: crsCode, prelim: null, midterm: null, finals: null, attendance: [] };
             this.records.push(rec);
         }
-        // Prevent duplicate date entry
         if (rec.attendance.some(a => a.date === date)) {
             if (!confirm("Attendance for this date already exists. Overwrite?")) return;
             rec.attendance = rec.attendance.filter(a => a.date !== date);
@@ -477,8 +486,6 @@ class GradesManager {
     }
 }
 
-// ── APP ───────────────────────────────────────────────────────
-
 class App {
     constructor() {
         this.studentManager = new StudentManager();
@@ -490,7 +497,6 @@ class App {
         this.init();
     }
 
-    // ── SESSION ──────────────────────────────────────────────────
     checkSession() {
         const session = JSON.parse(sessionStorage.getItem('pnc_session') || 'null');
         if (!session) { window.location.href = 'login.html'; return null; }
@@ -509,6 +515,38 @@ class App {
         $('#sessionName').text(name);
     }
 
+    applyRoleAccess(session) {
+        const role = session.role;
+
+        const access = {
+            admin:   ['dashboard','students','teachers','sections','courses','grades','reports','settings'],
+            teacher: ['dashboard','students','sections','courses','grades','reports'],
+            student: ['dashboard','grades','reports']
+        };
+        const allowed = access[role] || ['dashboard'];
+
+        $('.nav-link[data-page]').each(function() {
+            const page = $(this).data('page');
+            $(this).toggle(allowed.includes(page));
+        });
+
+        const self = this;
+        const originalNavigate = this.navigateTo.bind(this);
+        this.navigateTo = function(page) {
+            if (!allowed.includes(page)) {
+                originalNavigate('dashboard');
+                return;
+            }
+            originalNavigate(page);
+        };
+
+        $('body').addClass(`role-${role}`);
+
+        if (role === 'student') {
+            this._studentFilter = session.refId;
+        }
+    }
+
     logout() {
         if (confirm('Are you sure you want to sign out?')) {
             sessionStorage.removeItem('pnc_session');
@@ -517,21 +555,23 @@ class App {
     }
 
     init() {
-        // Session guard
         const session = this.checkSession();
         if (!session) return;
         this.renderSessionUI(session);
+        this.applyRoleAccess(session);
 
         $('.nav-link[data-page]').on('click', (e) => {
             this.navigateTo($(e.currentTarget).data('page'));
         });
 
         $('#stuSearch, #stuField').on('input change', () => this.renderStudents());
+        $('#secSearch, #secYearFilter, #secProgFilter').on('input change', () => this.renderSections());
+        $('#crsSearch').on('input', () => this.renderCourses());
+        $('#rptSectionFilter, #rptStatusFilter').on('change', () => this.renderPerformanceTable());
         $('#crsSearch').on('input', () => this.renderCourses());
         $('#tchSearch').on('input', () => this.renderTeachers());
         $('#rptSectionFilter, #rptStatusFilter').on('change', () => this.renderPerformanceTable());
 
-        // Live student field validation
         $('#stuName').on('input', () => {
             Validator.validateField('stuName', $('#stuName').val(), null);
         });
@@ -546,7 +586,6 @@ class App {
             );
         });
 
-        // Live teacher field validation
         $('#tchName').on('input', () => Validator.validateField('tchName', $('#tchName').val(), null));
         $('#tchEmail').on('input', () => {
             Validator.validateField('tchEmail', $('#tchEmail').val(),
@@ -595,14 +634,28 @@ class App {
     }
 
     populateGradeSelects() {
+        const session = this.checkSession();
+        const role    = session ? session.role : 'student';
+
         const stuSel = $('#gradeStudentSelect').empty().append('<option value="">— Select Student —</option>');
-        this.studentManager.students.forEach(s => {
-            stuSel.append(`<option value="${s.studentId}">${s.name} (${s.studentId})</option>`);
-        });
+
+        let students = this.studentManager.students;
+        if (role === 'student') {
+            students = students.filter(s => s.studentId === session.refId);
+        } else if (role === 'teacher') {
+            const mySections = this.sectionManager.sections
+                .filter(sec => sec.teacherId === session.refId)
+                .map(sec => sec.name);
+            if (mySections.length > 0) {
+                students = students.filter(s => mySections.includes(s.section));
+            }
+        }
+
+        students.forEach(s => stuSel.append(`<option value="${s.studentId}">${s.name} (${s.studentId})</option>`));
+
         const crseSel = $('#gradeSubjectSelect').empty().append('<option value="">— Select Subject —</option>');
-        this.courseManager.courses.forEach(c => {
-            crseSel.append(`<option value="${c.code}">${c.code} — ${c.name}</option>`);
-        });
+        this.courseManager.courses.forEach(c => crseSel.append(`<option value="${c.code}">${c.code} — ${c.name}</option>`));
+
         $('#gradeRecordArea').hide();
         $('#gradeEmptyState').show();
     }
@@ -629,12 +682,21 @@ class App {
                 const gradeLabel = avg
                     ? `<span class="badge ${parseFloat(avg) >= threshold ? 'badge-green' : 'badge-danger'}">${avg}</span>`
                     : `<span class="badge badge-gray">N/A</span>`;
+                const status = avg === null
+                    ? `<span class="badge badge-gray">No grades</span>`
+                    : parseFloat(avg) >= threshold
+                        ? `<span class="badge badge-green">Passing</span>`
+                        : `<span class="badge badge-danger">Failing</span>`;
+                const secObj = this.sectionManager.sections.find(sec => sec.name === s.section);
+                const secDisplay = s.section
+                    ? `<span class="badge badge-purple">${s.section}</span><br><span style="font-size:0.68rem;color:var(--n500);">${secObj ? secObj.year : ''}</span>`
+                    : '<span class="badge badge-gray">—</span>';
                 tbody.append(`
                     <tr>
-                        <td><strong>${s.name}</strong></td>
-                        <td><span class="badge badge-blue">${s.studentId}</span></td>
-                        <td>${s.section ? `<span class="badge badge-purple">${s.section}</span>` : '<span class="badge badge-gray">—</span>'}</td>
+                        <td><strong>${s.name}</strong><br><span class="badge badge-blue" style="font-size:0.65rem;">${s.studentId}</span></td>
+                        <td>${secDisplay}</td>
                         <td>${gradeLabel}</td>
+                        <td>${status}</td>
                     </tr>`);
             });
         }
@@ -661,17 +723,31 @@ class App {
         const query     = $('#stuSearch').val().toLowerCase();
         const field     = $('#stuField').val();
         const container = $('#studentList').empty();
-        const filtered  = this.studentManager.students.filter(s => {
+        const session   = this.checkSession();
+        const role      = session ? session.role : 'student';
+
+        let students = this.studentManager.students;
+        if (role === 'student') {
+            students = students.filter(s => s.studentId === session.refId);
+        } else if (role === 'teacher') {
+            const mySections = this.sectionManager.sections
+                .filter(sec => sec.teacherId === session.refId)
+                .map(sec => sec.name);
+            if (mySections.length > 0) {
+                students = students.filter(s => mySections.includes(s.section));
+            }
+        }
+
+        const filtered = students.filter(s => {
             if (field === "name")      return s.name.toLowerCase().includes(query);
             if (field === "studentId") return s.studentId.toLowerCase().includes(query);
             if (field === "section")   return (s.section || '').toLowerCase().includes(query);
             return s.name.toLowerCase().includes(query) || s.studentId.toLowerCase().includes(query) || (s.section || '').toLowerCase().includes(query);
         });
 
-        $('.student-count').text(`${filtered.length} student(s)`);
+        $('#studentCount').text(`${filtered.length} student(s)`);
         $('#sidebarStudentBadge').text(this.studentManager.students.length);
 
-        // Repopulate section dropdown
         const secSel = $('#stuSection').empty().append('<option value="">— Select Section —</option>');
         this.sectionManager.sections.forEach(s => secSel.append(`<option value="${s.name}">${s.name} (${s.year})</option>`));
 
@@ -680,31 +756,64 @@ class App {
             return;
         }
 
-        filtered.forEach((s, i) => {
+        const isAdmin   = role === 'admin';
+        const isTeacher = role === 'teacher';
+
+        const renderCard = (s) => {
             const realIdx    = this.studentManager.students.indexOf(s);
             const options    = this.courseManager.courses.map(c => `<option value="${c.code}">${c.name} (${c.code})</option>`).join('');
             const courseTags = s.enrolledCourses.length
                 ? s.enrolledCourses.map(c => `<span class="badge badge-gold">${c}</span>`).join('')
                 : `<span class="badge badge-gray">No subjects</span>`;
-            const secTag = s.section ? `<span class="badge badge-purple">${s.section}</span>` : '';
-            const avg = this.gradesManager.getStudentAvgGrade(s.studentId);
+            const secTag   = s.section ? `<span class="badge badge-purple">${s.section}</span>` : '';
+            const avg      = this.gradesManager.getStudentAvgGrade(s.studentId);
             const gradeTag = avg ? `<span class="badge badge-blue">Avg: ${avg}</span>` : '';
-            container.append(`
-                <div class="data-item">
-                    <div class="item-left">
-                        <strong>${s.name} <span class="badge badge-blue">${s.studentId}</span> ${secTag} ${gradeTag}</strong>
-                        <small>${s.email}</small>
-                        <div class="tags-row">${courseTags}</div>
-                        <select onchange="app.studentManager.enroll(${realIdx}, this.value)">
-                            <option value="">＋ Enroll in a subject</option>${options}
-                        </select>
-                    </div>
-                    <div class="item-actions">
-                        <button class="btn-edit" onclick="app.studentManager.edit(${realIdx})">✏️ Edit</button>
-                        <button class="btn-delete" onclick="app.studentManager.delete(${realIdx})">🗑 Delete</button>
-                    </div>
-                </div>`);
-        });
+            const actions  = isAdmin ? `
+                <button class="btn-edit" onclick="app.studentManager.edit(${realIdx})">✏️ Edit</button>
+                <button class="btn-delete" onclick="app.studentManager.delete(${realIdx})">🗑 Delete</button>` : '';
+            const enrollRow = isAdmin ? `
+                <select onchange="app.studentManager.enroll(${realIdx}, this.value)">
+                    <option value="">＋ Enroll in a subject</option>${options}
+                </select>` : '';
+            return `<div class="data-item">
+                <div class="item-left">
+                    <strong>${s.name} <span class="badge badge-blue">${s.studentId}</span> ${isAdmin ? secTag : ''} ${gradeTag}</strong>
+                    <small>${s.email}</small>
+                    <div class="tags-row">${courseTags}</div>
+                    ${enrollRow}
+                </div>
+                <div class="item-actions">${actions}</div>
+            </div>`;
+        };
+
+        if (isTeacher) {
+            const grouped = {};
+            filtered.forEach(s => {
+                const key = s.section || '— No Section —';
+                if (!grouped[key]) grouped[key] = [];
+                grouped[key].push(s);
+            });
+
+            Object.keys(grouped).sort().forEach(secName => {
+                const secObj   = this.sectionManager.sections.find(sec => sec.name === secName);
+                const stuCount = grouped[secName].length;
+                container.append(`
+                    <div class="section-group-card">
+                        <div class="section-group-head">
+                            <div>
+                                <span class="section-group-title">${secName}</span>
+                                <span class="badge badge-purple" style="margin-left:8px;">${secObj ? secObj.year : ''}</span>
+                            </div>
+                            <span class="badge badge-green">${stuCount} student(s)</span>
+                        </div>
+                        <div class="section-group-body">
+                            ${grouped[secName].map(s => renderCard(s)).join('')}
+                        </div>
+                    </div>`);
+            });
+        } else {
+            filtered.forEach(s => container.append(renderCard(s)));
+        }
     }
 
     renderTeachers() {
@@ -713,7 +822,6 @@ class App {
         $('#sidebarTeacherBadge').text(this.teacherManager.teachers.length);
         $('#teacherCount').text(`${this.teacherManager.teachers.length} teacher(s)`);
 
-        // Refresh teacher dropdown in sections
         const tchSel = $('#secTeacher').empty().append('<option value="">— Select Teacher —</option>');
         this.teacherManager.teachers.forEach(t => tchSel.append(`<option value="${t.employeeId}">${t.name} (${t.employeeId})</option>`));
 
@@ -747,28 +855,69 @@ class App {
     }
 
     renderSections() {
-        const container = $('#sectionList').empty();
-        $('#sidebarSectionBadge').text(this.sectionManager.sections.length);
-        $('#sectionCount').text(`${this.sectionManager.sections.length} section(s)`);
+        const query      = ($('#secSearch').val() || '').toLowerCase();
+        const yearFilter = $('#secYearFilter').val() || 'all';
+        const progFilter = $('#secProgFilter').val() || 'all';
+        const container  = $('#sectionList').empty();
+        const session    = this.checkSession();
+        const role       = session ? session.role : 'admin';
+        const isAdmin    = role === 'admin';
 
-        if (!this.sectionManager.sections.length) {
-            container.append(`<div class="empty-state"><div class="empty-icon">🏫</div><p>No sections yet.</p></div>`);
+        $('#sidebarSectionBadge').text(this.sectionManager.sections.length);
+
+        let sections = this.sectionManager.sections;
+        if (role === 'teacher') {
+            sections = sections.filter(s => s.teacherId === session.refId);
+        }
+
+        let filtered = sections.filter(s => {
+            const matchQuery = s.name.toLowerCase().includes(query);
+            const matchYear  = yearFilter === 'all' || s.year === yearFilter;
+            const matchProg  = progFilter === 'all' || s.name.toUpperCase().includes(progFilter);
+            return matchQuery && matchYear && matchProg;
+        });
+        $('#sectionCount').text(`${filtered.length} section(s)`);
+
+        if (!filtered.length) {
+            container.append(`<div class="empty-state"><div class="empty-icon">🏫</div><p>No sections ${role === 'teacher' ? 'assigned to you' : 'match your filter'}.</p></div>`);
             return;
         }
 
-        this.sectionManager.sections.forEach((s, idx) => {
-            const teacher = this.teacherManager.teachers.find(t => t.employeeId === s.teacherId);
+        const tchOptions = this.teacherManager.teachers.map(t =>
+            `<option value="${t.employeeId}">${t.name} (${t.employeeId})</option>`).join('');
+
+        filtered.forEach(s => {
+            const realIdx  = this.sectionManager.sections.indexOf(s);
+            const teacher  = this.teacherManager.teachers.find(t => t.employeeId === s.teacherId);
             const stuCount = this.studentManager.students.filter(st => st.section === s.name).length;
+
+            const teacherCell = isAdmin
+                ? `<div style="display:flex;align-items:center;gap:6px;flex:1;min-width:200px;">
+                       <span style="font-size:0.76rem;color:var(--n600);white-space:nowrap;">Assign Teacher:</span>
+                       <select onchange="app.sectionManager.assignTeacher(${realIdx}, this.value)"
+                           style="flex:1;font-size:0.78rem;padding:4px 8px;">
+                           <option value="">— Unassigned —</option>
+                           ${tchOptions}
+                       </select>
+                   </div>`
+                : `<span style="font-size:0.78rem;color:var(--n600);">👨‍🏫 ${teacher ? teacher.name : '<em>Unassigned</em>'}</span>`;
+
             container.append(`
                 <div class="data-item">
-                    <div class="item-left">
-                        <strong>${s.name} <span class="badge badge-purple">${s.year}</span></strong>
-                        <small>Teacher: ${teacher ? teacher.name : '<em>Unassigned</em>'} &nbsp;·&nbsp; ${stuCount} student(s)</small>
+                    <div class="item-left" style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
+                        <div>
+                            <strong>${s.name} <span class="badge badge-purple">${s.year}</span></strong>
+                            <small>${stuCount} student(s)</small>
+                        </div>
+                        ${teacherCell}
                     </div>
                     <div class="item-actions">
-                        <button class="btn-delete" onclick="app.sectionManager.delete(${idx})">🗑 Delete</button>
+                        <span class="badge ${teacher ? 'badge-green' : 'badge-gray'}" style="font-size:0.7rem;">
+                            ${teacher ? '✓ ' + teacher.name : 'No teacher'}
+                        </span>
                     </div>
                 </div>`);
+            if (isAdmin) container.find('select').last().val(s.teacherId || '');
         });
     }
 
@@ -799,7 +948,7 @@ class App {
                     <div class="item-left" style="display:flex;align-items:center;">
                         <span class="course-code-pill">${c.code}</span>
                         <div>
-                            <strong>${c.name}</strong>
+                            <strong>${c.name} <span class="badge badge-blue">${c.units || 3} unit(s)</span></strong>
                             <small>${count} student(s) enrolled</small>
                         </div>
                     </div>
@@ -835,11 +984,9 @@ class App {
         $('#rptWithGrades').text(gradesRecorded);
         $('#rptClassAvg').text(classAvg);
 
-        // Section filter options
         const secFilter = $('#rptSectionFilter').empty().append('<option value="all">All Sections</option>');
         this.sectionManager.sections.forEach(s => secFilter.append(`<option value="${s.name}">${s.name}</option>`));
 
-        // Enrollment bars
         const barsContainer = $('#courseEnrollBars').empty();
         if (!courses.length) {
             barsContainer.append(`<div class="empty-state"><div class="empty-icon">📊</div><p>No subjects to report yet.</p></div>`);
@@ -867,44 +1014,62 @@ class App {
 
     renderPerformanceTable() {
         const students  = this.studentManager.students;
-        const secFilter = $('#rptSectionFilter').val();
-        const stsFilter = $('#rptStatusFilter').val();
+        const secFilter = $('#rptSectionFilter').val() || 'all';
+        const stsFilter = $('#rptStatusFilter').val() || 'all';
         const threshold = parseFloat($('#passThreshold').val()) || 75;
-        const tbody = $('#performanceBody').empty();
+        const tbody     = $('#performanceBody').empty();
 
         let filtered = students;
         if (secFilter !== 'all') filtered = filtered.filter(s => s.section === secFilter);
 
         filtered = filtered.map(s => {
+            const records = s.enrolledCourses.map(code => this.gradesManager.getRecord(s.studentId, code)).filter(Boolean);
+            const prelims  = records.map(r => r.prelim).filter(v => v !== null && v !== undefined && v !== '');
+            const midterms = records.map(r => r.midterm).filter(v => v !== null && v !== undefined && v !== '');
+            const finals   = records.map(r => r.finals).filter(v => v !== null && v !== undefined && v !== '');
+            const avgP = prelims.length  ? (prelims.reduce((a,b)=>a+parseFloat(b),0)/prelims.length).toFixed(1)   : null;
+            const avgM = midterms.length ? (midterms.reduce((a,b)=>a+parseFloat(b),0)/midterms.length).toFixed(1) : null;
+            const avgF = finals.length   ? (finals.reduce((a,b)=>a+parseFloat(b),0)/finals.length).toFixed(1)     : null;
             const avg  = this.gradesManager.getStudentAvgGrade(s.studentId);
             const attd = this.gradesManager.getStudentAttendancePct(s.studentId);
             let status;
             if (avg === null) status = 'incomplete';
             else if (parseFloat(avg) >= threshold) status = 'passed';
             else status = 'failed';
-            return { ...s, avg, attd, status };
+            return { ...s, avg, avgP, avgM, avgF, attd, status };
         });
 
         if (stsFilter !== 'all') filtered = filtered.filter(s => s.status === stsFilter);
 
+        const passed = filtered.filter(s => s.status === 'passed').length;
+        const failed = filtered.filter(s => s.status === 'failed').length;
+        $('#rptPassed').text(passed); $('#rptFailed').text(failed);
+
         if (!filtered.length) {
-            tbody.append(`<tr><td colspan="7" style="text-align:center;color:var(--n400);padding:22px;">No records match the selected filters.</td></tr>`);
+            tbody.append(`<tr><td colspan="10" style="text-align:center;color:var(--n400);padding:22px;">No records match the selected filters.</td></tr>`);
             return;
         }
 
-        const statusBadge = { passed: 'badge-green', failed: 'badge-danger', incomplete: 'badge-gray' };
+        const sb = { passed: 'badge-green', failed: 'badge-danger', incomplete: 'badge-gray' };
         filtered.forEach(s => {
             tbody.append(`
                 <tr>
                     <td><strong>${s.name}</strong></td>
                     <td><span class="badge badge-blue">${s.studentId}</span></td>
                     <td>${s.section ? `<span class="badge badge-purple">${s.section}</span>` : '—'}</td>
-                    <td>${s.enrolledCourses.length}</td>
+                    <td>${s.enrolledCourses.length > 0 ? s.enrolledCourses.map(c=>`<span class="badge badge-gold">${c}</span>`).join(' ') : '—'}</td>
+                    <td>${s.avgP !== null ? s.avgP : '—'}</td>
+                    <td>${s.avgM !== null ? s.avgM : '—'}</td>
+                    <td>${s.avgF !== null ? s.avgF : '—'}</td>
                     <td><strong>${s.avg !== null ? s.avg : '—'}</strong></td>
                     <td>${s.attd !== null ? s.attd + '%' : '—'}</td>
-                    <td><span class="badge ${statusBadge[s.status]}">${s.status.toUpperCase()}</span></td>
+                    <td><span class="badge ${sb[s.status]}">${s.status.toUpperCase()}</span></td>
                 </tr>`);
         });
+    }
+
+    printReport() {
+        window.print();
     }
 
     renderAll() {
@@ -913,10 +1078,11 @@ class App {
         this.renderSections();
         this.renderCourses();
         this.renderDashboard();
+        const s = this.checkSession();
+        if (s) $('#settingsUser').text(`${s.name} (${s.role})`);
     }
 }
 
-// ── BOOT ──────────────────────────────────────────────────────
 $(document).ready(() => {
     window.app = new App();
 });
