@@ -1,11 +1,6 @@
-/* ============================================================
-   SCHOLARIS LMS v2.0 — ADMIN PANEL STYLESHEET
-   Polytechnic University of Cabuyao | style.css
-   ============================================================ */
-
 @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&display=swap');
 
-/* ── RESET & TOKENS ── */
+
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 :root {
